@@ -12,11 +12,11 @@ import pandas as pd
 
 from models.computer import hardware_details, Computer, COMPUTER_PRESETS
 from models.activities import ACTIVITIES, get_task
-from core.simulator import Simulator, StressTest
+from core.simulator import StressTest
 from core import report as report_mod
 from core import stress as stress_mod
 from core import experiments as exp_mod
-from ui.demo import render_demo
+from ui.demo import render_comparison, render_demo
 from ui.lab import render_line, render_scatter, render_table
 
 st.set_page_config(page_title="EnergySim", page_icon="⚡", layout="wide")
@@ -25,13 +25,11 @@ stylesheet = Path(__file__).with_name("ui") / "theme.css"
 st.markdown(f"<style>{stylesheet.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 SCREENS = [
-    "demo",
     "intro_problema",
     "novidade", "afetados", "impactos", "solucoes",
     "intro_objetivo", "intro_voltagem",
     "intro_quartzo", "intro_geometria",
-    "selecionar_pc", "selecionar_atividade",
-    "simulacao", "relatorio",
+    "demo", "comparativo",
     "teste_estresse_intro", "teste_estresse_execucao",
     "teste_estresse_resultado", "teste_estresse_explicacao",
     "laboratorio",
@@ -39,14 +37,8 @@ SCREENS = [
 ]
 
 # ---------------------------------------------------------------- estado ----
-if "screen" not in st.session_state:
+if st.session_state.get("screen") not in SCREENS:
     st.session_state.screen = SCREENS[0]
-if "sim" not in st.session_state:
-    st.session_state.sim = None
-if "computer" not in st.session_state:
-    st.session_state.computer = None
-if "tarifa" not in st.session_state:
-    st.session_state.tarifa = 0.90
 if "stress_test" not in st.session_state:
     st.session_state.stress_test = None
 if "stress_test_report" not in st.session_state:
@@ -62,7 +54,7 @@ def nav_buttons(prev_key=None, next_key=None, next_label="Continuar →", prev_l
     actions = [(prev_key, prev_label, "secondary"), (next_key, next_label, "primary")]
     available = [action for action in actions if action[0]]
     for col, (target, label, kind) in zip(st.columns(len(available)), available):
-        if col.button(label, type=kind, use_container_width=True):
+        if col.button(label, type=kind, width="stretch"):
             goto(target)
 
 # ========================================================== TELA: PROBLEMA ==
@@ -216,272 +208,22 @@ ar**, mais calor ele consegue transferir para fora.
         "representada pelos parâmetros de refrigeração de cada PC (o quão "
         "rápido ele esfria e qual a temperatura máxima que costuma atingir)."
     )
-    nav_buttons(prev_key="intro_quartzo", next_key="selecionar_pc")
+    nav_buttons(prev_key="intro_quartzo", next_key="demo", next_label="Abrir demonstração rápida →")
 
 
-# ======================================================= TELA: ESCOLHER PC ==
-def screen_selecionar_pc():
-    st.title("Escolha o computador")
-    st.caption("Configurações de referência para estudo. Consumo, temperatura e clock em execução são estimativas didáticas, sem leitura do seu computador.")
-    st.info("Clock base e turbo são diferentes. O turbo é um limite eventual, não uma frequência constante em todos os núcleos. GHz isoladamente não determina o desempenho.")
-    cols = st.columns(3)
-    escolhido = None
-    for col, key in zip(cols, COMPUTER_PRESETS.keys()):
-        preset = COMPUTER_PRESETS[key]
-        c_tier = Computer(key)
-        with col:
-            with st.container(border=True):
-                st.markdown(f"### {preset['nome']}")
-                st.caption(preset["descricao"])
-                for label, value in hardware_details(c_tier):
-                    st.write(f"**{label}:** {value}")
-                st.write(f"**Consumo máx. estimado:** {c_tier.max_power_w():.0f} W")
-                st.caption(
-                    f"📐 Dissipador com ~{c_tier.aletas_dissipador} aletas · "
-                    f"fluxo de ar: {c_tier.fluxo_ar}"
-                )
-                if st.button(f"Selecionar", key=f"pc_{key}", use_container_width=True):
-                    escolhido = key
-    if escolhido:
-        st.session_state.computer = escolhido
-        goto("selecionar_atividade")
-    nav_buttons(prev_key="intro_geometria")
+def screen_demo():
+    demo = render_demo()
+    next_screen = "comparativo" if demo.stage == "optimized" else None
+    nav_buttons(prev_key="intro_geometria", next_key=next_screen, next_label="Ver comparativo →")
 
 
-# =================================================== TELA: ESCOLHER TAREFA ==
-def screen_selecionar_atividade():
-    st.title("Escolha a atividade")
-    if not st.session_state.computer:
-        st.warning("Selecione um computador primeiro.")
-        nav_buttons(prev_key="selecionar_pc")
+def screen_comparativo():
+    demo = st.session_state.get("quick_demo")
+    if demo is None or not render_comparison(demo):
+        st.info("Conclua a otimização na demonstração para ver a comparação.")
+        nav_buttons(prev_key="demo")
         return
-
-    st.session_state.tarifa = st.number_input(
-        "Tarifa de energia (R$/kWh)", min_value=0.10, max_value=3.00,
-        value=st.session_state.tarifa, step=0.05,
-    )
-
-    categoria = st.radio(
-        "Intensidade de uso", options=list(ACTIVITIES.keys()),
-        format_func=lambda k: ACTIVITIES[k]["titulo"], horizontal=True,
-    )
-    tarefa = st.selectbox("Tarefa específica", options=list(ACTIVITIES[categoria]["tarefas"].keys()))
-
-    if st.button("Iniciar simulação →", type="primary"):
-        computer = Computer(st.session_state.computer)
-        ranges = get_task(categoria, tarefa)
-        st.session_state.sim = Simulator(
-            computer, categoria, tarefa, ranges, tarifa_kwh=st.session_state.tarifa
-        )
-        st.session_state.sim.advance(10, passo=2)  # aquece um pouco antes de mostrar
-        goto("simulacao")
-
-    nav_buttons(prev_key="selecionar_pc")
-
-
-# ======================================================== TELA: SIMULAÇÃO ==
-def hud_card(col, titulo, valor, unidade, delta=None):
-    with col:
-        st.metric(titulo, f"{valor:.1f} {unidade}" if isinstance(valor, float) else f"{valor} {unidade}")
-
-
-def screen_simulacao():
-    sim: Simulator = st.session_state.sim
-    if sim is None:
-        st.warning("Nenhuma simulação em andamento.")
-        nav_buttons(prev_key="selecionar_atividade")
-        return
-
-    st.title(f"📊 Simulação — {sim.computer.nome}")
-    st.caption(f"Atividade: {sim.categoria} — {sim.tarefa}")
-
-    snap = sim.snapshot()
-
-    # ---- HUD ----
-    st.markdown("#### CPU")
-    c1, c3 = st.columns(2)
-    c1.metric("Utilização", f"{snap['cpu_util']:.0f} %")
-    c1.progress(min(1.0, snap['cpu_util'] / 100))
-    c3.metric("Potência CPU", f"{snap['power']['cpu_w']:.1f} W")
-
-    st.markdown("#### GPU")
-    g1, g3 = st.columns(2)
-    g1.metric("Utilização", f"{snap['gpu_util']:.0f} %")
-    g1.progress(min(1.0, snap['gpu_util'] / 100))
-    g3.metric("Potência GPU", f"{snap['power']['gpu_w']:.1f} W")
-
-    st.markdown("#### Sistema")
-    s1, s2, s4, s5 = st.columns(4)
-    s1.metric("Consumo total", f"{snap['power']['total_w']:.0f} W")
-    s2.metric("Temperatura", f"{snap['temp']:.1f} °C")
-    s2.progress(min(1.0, snap['temp'] / snap['temp_max_ref']))
-    s4.metric("Energia acumulada", f"{snap['kwh']:.4f} kWh")
-    s5.metric("Tempo simulado", f"{snap['elapsed_s']/60:.1f} min")
-
-    custo_atual = snap['kwh'] * sim.tarifa_kwh
-    st.metric("💰 Custo acumulado", f"R$ {custo_atual:.4f}")
-
-    if snap["anomaly"]["anomalo"]:
-        st.error(f"⚠️ CONSUMO ACIMA DO ESPERADO: {snap['power']['total_w']:.0f} W "
-                  f"(esperado {snap['anomaly']['esperado_min']:.0f}–{snap['anomaly']['esperado_max']:.0f} W)")
-
-    # ---- estresse prolongado / desempenho / (in)estabilidade ----
-    st.divider()
-    st.markdown("#### 🔥 Estresse prolongado")
-    badge = stress_mod.temp_badge(snap["temp"], snap["temp_max_ref"])
-    e1, e2, e3, e4 = st.columns(4)
-    e1.metric("⏱️ Tempo sob estresse", stress_mod.fmt_mmss(snap["stress_s"]))
-    e2.metric("🎯 Desempenho", f"{snap['performance_pct']:.0f} %")
-    e3.metric(f"{badge['emoji']} Estado térmico", badge["label"])
-    e4.metric("🖼️ FPS (educativo)", f"{snap['fps']:.0f}")
-    st.caption(
-        "O indicador de FPS é **ilustrativo** (não é medição de um jogo real) — "
-        "serve só para tornar a perda de desempenho mais intuitiva."
-    )
-
-    if snap["last_event"]:
-        nivel_msg = snap["last_event"]
-        if "TELA AZUL" in nivel_msg:
-            st.error(nivel_msg)
-        elif "INSTÁVEL" in nivel_msg:
-            st.error(nivel_msg)
-        else:
-            st.warning(nivel_msg)
-        st.caption(
-            "Quando os componentes ficam muito quentes, o computador pode "
-            "reduzir seu desempenho para evitar danos e manter a temperatura "
-            "sob controle (redução automática de desempenho / *thermal throttling*)."
-        )
-
-    with st.expander("🕰️ Clock ilustrativo e fluxo de ar deste PC"):
-        cc1, cc2 = st.columns(2)
-        cc1.metric("Clock (ilustrativo)", f"{snap['clock_ghz']:.2f} GHz")
-        cc1.caption(
-            "Valor meramente educativo. O quartzo fornece a referência de "
-            "frequência do sistema, mas não é ele quem causa essa variação — "
-            "isso representa, de forma simplificada, o *throttling* térmico."
-        )
-        cc2.write(f"🌬️ Fluxo de ar: **{sim.computer.fluxo_ar}**")
-        cc2.write(f"📐 Aletas do dissipador: **{sim.computer.aletas_dissipador}**")
-        cc2.caption("Veja a explicação completa na tela 'Por que o formato dos componentes importa?'.")
-
-    if snap["lockups"] or snap["restarts"]:
-        st.caption(f"Ocorrências nesta simulação — travamentos: {snap['lockups']} · reinicializações: {snap['restarts']}")
-
-    # ---- controles de tempo ----
-    st.divider()
-    tcol1, tcol2, tcol3 = st.columns(3)
-    if tcol1.button("⏱️ Avançar 10s"):
-        sim.advance(10, passo=2)
-        st.rerun()
-    if tcol2.button("⏱️ Avançar 60s"):
-        sim.advance(60, passo=2)
-        st.rerun()
-    if tcol3.button("⏱️ Avançar 5 min"):
-        sim.advance(300, passo=5)
-        st.rerun()
-
-    # ---- gráficos ----
-    if len(sim.real.history) > 1:
-        df = pd.DataFrame(sim.real.history)
-        gcol1, gcol2 = st.columns(2)
-        with gcol1:
-            st.caption("Potência (W) ao longo do tempo")
-            st.line_chart(df.set_index("t")[["power"]])
-        with gcol2:
-            st.caption("Temperatura (°C) ao longo do tempo")
-            st.line_chart(df.set_index("t")[["temp"]])
-
-    # ---- desafio interativo: cenário de decisão ----
-    st.divider()
-    st.subheader("🧩 O que você faria?")
-    st.write(
-        f"O computador está em **{snap['power']['total_w']:.0f} W**, "
-        f"**{snap['temp']:.0f} °C**, GPU em **{snap['gpu_util']:.0f}%**."
-    )
-    if st.button("😈 Simular processo desnecessário em segundo plano (+90 W)"):
-        sim.inject_waste(90)
-        st.rerun()
-
-    d1, d2, d3, d4, d5 = st.columns(5)
-    decisao = None
-    if d1.button("🌱 Modo Economia"):
-        decisao = "modo_economia"
-    if d2.button("⚖️ Modo Equilibrado"):
-        decisao = "modo_equilibrado"
-    if d3.button("🚀 Modo Desempenho"):
-        decisao = "modo_desempenho"
-    if d4.button("🔍 Verificar processos"):
-        decisao = "verificar_processos"
-    if d5.button("⏭️ Não fazer nada"):
-        decisao = "nada"
-
-    if decisao:
-        registro = sim.apply_decision(decisao)
-        antes, depois = registro["antes"], registro["depois"]
-        st.success(
-            f"**Antes:** {antes['power']['total_w']:.0f} W — {antes['temp']:.0f} °C   →   "
-            f"**Depois:** {depois['power']['total_w']:.0f} W — {depois['temp']:.0f} °C   "
-            f"(Δ potência: {antes['power']['total_w']-depois['power']['total_w']:+.0f} W)"
-        )
-        st.rerun()
-
-    with st.expander("Recomendações do sistema"):
-        for dica in sim.recommendations():
-            st.write(dica)
-
-    st.divider()
-    nav_buttons(prev_key="selecionar_atividade", next_key="relatorio", next_label="Ver relatório final →")
-
-
-# ========================================================== TELA: RELATÓRIO
-def screen_relatorio():
-    sim = st.session_state.sim
-    if sim is None or not sim.real.history:
-        st.warning("Rode a simulação primeiro.")
-        nav_buttons(prev_key="simulacao")
-        return
-
-    r = report_mod.build_report(sim)
-    st.title("Relatório da Simulação")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Computador", r["computador"])
-    c2.metric("Tempo simulado", f"{r['tempo_min']} min")
-    c3.metric("Consumo médio", f"{r['consumo_medio_w']} W")
-    c4.metric("Consumo máx.", f"{r['consumo_max_w']} W")
-
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Energia total", f"{r['kwh']} kWh")
-    c6.metric("Custo estimado", f"R$ {r['custo']}")
-    c7.metric("Temp. média", f"{r['temp_media']} °C")
-    c8.metric("Temp. máxima", f"{r['temp_max']} °C")
-
-    st.markdown(f"**Utilização média:** CPU {r['cpu_medio']}% · GPU {r['gpu_medio']}%")
-    st.markdown(f"**Economia obtida pelas decisões do usuário:** {r['economia_pct']}%")
-
-    st.divider()
-    st.subheader("Estresse prolongado e estabilidade")
-    b1, b2, b3, b4, b5 = st.columns(5)
-    b1.metric("Tempo máx. sob estresse", stress_mod.fmt_mmss(r["stress_max_s"]))
-    b2.metric("Desempenho médio", f"{r['performance_medio']}%")
-    b3.metric("FPS médio (educativo)", f"{r['fps_medio']:.0f}")
-    b4.metric("Travamentos", r["lockups"])
-    b5.metric("Reinicializações", r["restarts"])
-    st.markdown(f"**Estabilidade geral:** {r['estabilidade']}")
-
-    st.subheader("Projeção de custo")
-    proj = r["projecao"]
-    p1, p2, p3 = st.columns(3)
-    p1.metric("1 hora", f"R$ {proj['1h']['custo']}", f"{proj['1h']['kwh']} kWh")
-    p2.metric("8 horas", f"R$ {proj['8h']['custo']}", f"{proj['8h']['kwh']} kWh")
-    p3.metric("30 dias (8h/dia)", f"R$ {proj['30d']['custo']}", f"{proj['30d']['kwh']} kWh")
-
-    st.divider()
-    st.subheader("Conclusão")
-    st.success(r["conclusao"])
-
-    nav_buttons(prev_key="simulacao", next_key="teste_estresse_intro", next_label="Teste de estresse: Entrada x High-End →")
+    nav_buttons(prev_key="demo", next_key="teste_estresse_intro", next_label="Ir para o teste de estresse →")
 
 
 # ====================================================== TELAS EXPLICATIVAS ==
@@ -549,9 +291,8 @@ def screen_solucoes():
 5. **Gerenciar processos** — identificar aplicações consumindo recursos à toa.
 6. **Melhorar a refrigeração** — reduz picos de temperatura.
 7. **Detectar consumo anormal** — comparar consumo esperado × consumo real, como
-   você viu na simulação.
+   você verá na demonstração.
     """)
-    st.info("Você já experimentou várias dessas soluções na etapa de simulação!")
     nav_buttons(prev_key="impactos", next_key="intro_objetivo")
 
 
@@ -574,6 +315,15 @@ Agora vamos rodar a **mesma tarefa pesada, ao mesmo tempo**, em um **PC de
 Entrada** e em um **PC High-End**, para ver essa diferença acontecer.
     """)
 
+    st.subheader("Configurações dos computadores")
+    for card, profile in zip(st.columns(2), ("entrada", "premium")):
+        with card, st.container(border=True):
+            computer = Computer(profile)
+            st.markdown(f"### {computer.nome}")
+            for label, value in hardware_details(computer):
+                st.write(f"**{label}** · {value}")
+            st.caption(f"Fluxo de ar {computer.fluxo_ar} · Potência máxima estimada de {computer.max_power_w():.0f} W")
+
     tarefas_pesadas = list(ACTIVITIES["pesado"]["tarefas"].keys())
     tarefa = st.selectbox("Tarefa do teste de estresse", options=tarefas_pesadas)
 
@@ -585,7 +335,7 @@ Entrada** e em um **PC High-End**, para ver essa diferença acontecer.
         st.session_state.stress_test_report = None
         goto("teste_estresse_execucao")
 
-    nav_buttons(prev_key="relatorio")
+    nav_buttons(prev_key="comparativo")
 
 
 def screen_teste_estresse_execucao():
@@ -596,6 +346,11 @@ def screen_teste_estresse_execucao():
         return
 
     st.title("📊 Teste de Estresse em andamento")
+    st.caption(
+        "O desempenho indica quanto cada PC mantém da própria capacidade. "
+        f"O teste usa a mesma referência térmica de {test.THERMAL_REFERENCE_C:.0f} °C para os dois perfis. "
+        "Os FPS são estimativas didáticas e partem de valores de referência diferentes."
+    )
     snap = test.snapshot()
     a, b = snap["a"], snap["b"]
 
@@ -613,10 +368,11 @@ def screen_teste_estresse_execucao():
             st.progress(min(1.0, snap_pc["temp"] / snap_pc["temp_max_ref"]), text="Temperatura")
             st.metric("Desempenho", f"{snap_pc['performance_pct']:.0f} %")
             st.progress(snap_pc["performance_pct"] / 100, text="Desempenho")
-            st.metric("FPS (educativo)", f"{snap_pc['fps']:.0f}")
+            st.metric("FPS (educativo)", f"{snap_pc['fps']:.0f}",
+                      delta=f"Referência inicial: {snap_pc['fps_base']:.0f}", delta_color="off")
             st.metric("Tempo sob estresse", stress_mod.fmt_mmss(snap_pc["stress_s"]))
-            problemas = snap_pc["lockups"] + snap_pc["restarts"]
-            st.metric("Problemas (travamentos + reinícios)", problemas)
+            st.metric("Travamentos", snap_pc["lockups"])
+            st.caption(f"Reinícios simulados · {snap_pc['restarts']}")
             estab_parcial = stress_mod.estabilidade_rating(
                 snap_pc["lockups"], snap_pc["restarts"], snap_pc["performance_pct"]
             )
@@ -703,6 +459,13 @@ prolongada acontece por um conjunto de fatores combinados:
 - **Menor perda de energia e menor aquecimento** relativo à potência entregue.
 - **Maior estabilidade** — menos throttling, menos travamentos, menos reinicializações.
     """)
+    st.info(
+        "O cooler box foi representado com menor capacidade de dissipação. "
+        "À medida que a temperatura sobe, a proteção térmica reduz a potência dos chips "
+        "e o desempenho. Travamentos e reinícios só aparecem após exposição prolongada "
+        "acima do limiar de instabilidade do modelo. "
+        "O percentual de desempenho é calculado em relação à capacidade de cada PC."
+    )
     st.info(
         "🔷 **Sobre o quartzo:** ele tem outra função — ajudar em referências de "
         "frequência e sincronização dos circuitos. Ele **não é responsável pela "
@@ -899,9 +662,9 @@ def screen_conclusao():
         "**por que**, qual o **impacto**, e como a **tecnologia** pode ajudar a "
         "identificar e reduzir desperdícios."
     )
-    if st.button("Reiniciar simulação"):
-        st.session_state.sim = None
-        st.session_state.computer = None
+    if st.button("Recomeçar roteiro"):
+        st.session_state.pop("quick_demo", None)
+        st.session_state.pop("demo_tariff", None)
         st.session_state.stress_test = None
         st.session_state.stress_test_report = None
         goto("intro_problema")
@@ -910,16 +673,13 @@ def screen_conclusao():
 
 # ================================================================= ROTEADOR
 SCREEN_FUNCS = {
-    "demo": render_demo,
+    "demo": screen_demo,
+    "comparativo": screen_comparativo,
     "intro_problema": screen_intro_problema,
     "intro_objetivo": screen_intro_objetivo,
     "intro_voltagem": screen_intro_voltagem,
     "intro_quartzo": screen_intro_quartzo,
     "intro_geometria": screen_intro_geometria,
-    "selecionar_pc": screen_selecionar_pc,
-    "selecionar_atividade": screen_selecionar_atividade,
-    "simulacao": screen_simulacao,
-    "relatorio": screen_relatorio,
     "novidade": screen_novidade,
     "afetados": screen_afetados,
     "impactos": screen_impactos,
@@ -933,19 +693,12 @@ SCREEN_FUNCS = {
 }
 
 screen = st.session_state.screen
-if screen != "demo":
-    step = SCREENS.index(screen)
-    total = len(SCREENS) - 1
-    st.markdown(
-        '<div class="mast full-mode"><b><span aria-hidden="true">ϟ</span> EnergySim</b>'
-        f'<small>Modo completo · {step} de {total}</small></div>',
-        unsafe_allow_html=True,
-    )
-    st.progress(step / total)
-    st.caption("Simulação educativa com valores estimados.")
-
+step = SCREENS.index(screen) + 1
+total = len(SCREENS)
+st.markdown(
+    '<div class="mast full-mode"><b><span aria-hidden="true">ϟ</span> EnergySim</b>'
+    f'<small>Etapa {step} de {total}</small></div>',
+    unsafe_allow_html=True,
+)
+st.progress(step / total)
 SCREEN_FUNCS[screen]()
-if screen != "demo":
-    st.divider()
-    if st.button("Voltar à demonstração rápida"):
-        goto("demo")

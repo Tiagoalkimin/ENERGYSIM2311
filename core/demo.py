@@ -48,10 +48,15 @@ class QuickDemo:
         if self.stage != "waste":
             return
         # Decisão já implementada: remove apenas a parcela de processos extras.
+        self.before = self.snapshot()
         self.sim.apply_decision("verificar_processos")  # avança 20 s
         self.sim.advance(self.SETTLE_S - 20, passo=2)
         self.after = self.snapshot()
         self.stage = "optimized"
+
+    def observe(self, seconds):
+        """Estende a etapa atual e registra a evolução sem alterar a carga."""
+        self.sim.advance(seconds, passo=2)
 
     def comparison(self):
         if self.after is None:

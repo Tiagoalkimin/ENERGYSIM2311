@@ -18,6 +18,10 @@ class Track:
     """Uma trilha de simulação (real ou baseline)."""
 
     background_load = (0.0, 0.0)
+    temp_alvo_ref = None
+    thermal_tau_s = None
+    instability_period_s = None
+    unstable_s = 0.0
 
     def __init__(self, computer):
         self.computer = computer
@@ -59,15 +63,25 @@ class Track:
             power["waste_w"] = round(self.waste_w + loaded["total_w"] - power["total_w"], 1)
             power["total_w"] = loaded["total_w"]
         temp_max_ref = self.computer.cooling["temp_max_ref"]
+        ref_estado = self.temp_limite_ref or temp_max_ref
+        if self.instability_period_s is not None:
+            # A proteção reduz a potência dos chips conforme a temperatura sobe.
+            reduction = min(0.20, max(0.0, self.temp - ref_estado * 0.85) * 0.008)
+            if reduction:
+                for component in ("cpu_w", "gpu_w"):
+                    power[component] = round(power[component] * (1 - reduction), 1)
+                power["total_w"] = round(
+                    power["cpu_w"] + power["gpu_w"] + power["extras_w"] + power["waste_w"], 1
+                )
         target = thermal.target_temperature(
-            power["total_w"], self.computer.max_power_w(), temp_max_ref
+            power["total_w"], self.computer.max_power_w(), self.temp_alvo_ref or temp_max_ref
         ) * reco.MODOS[self.modo]["fator_temp_alvo"]
-        self.temp = thermal.update_temperature(self.temp, target, dt_seconds, self.computer.cooling["tau"])
+        tau = self.thermal_tau_s or self.computer.cooling["tau"]
+        self.temp = thermal.update_temperature(self.temp, target, dt_seconds, tau)
         self.kwh += energy.energy_kwh(power["total_w"], dt_seconds)
         self.elapsed_s += dt_seconds
 
         # ---- estresse prolongado, desempenho e clock ilustrativo ----------
-        ref_estado = self.temp_limite_ref or temp_max_ref
         carga = stress.carga_fracao(power["total_w"], self.computer.max_power_w())
         self.stress_s = stress.update_stress_time(self.stress_s, carga, dt_seconds)
         self.performance_pct = stress.compute_performance_pct(self.temp, ref_estado, self.stress_s)
@@ -78,14 +92,27 @@ class Track:
             self.computer.cpu.profile["boost_ghz"],
         )
 
-        evento = stress.check_thermal_event(self.temp, ref_estado)
+        trigger_event = None
+        if self.instability_period_s is not None:
+            if self.temp >= ref_estado * stress.FRACAO_INSTABILIDADE:
+                self.unstable_s += dt_seconds
+            else:
+                self.unstable_s = 0.0
+            trigger_event = self.unstable_s >= self.instability_period_s
+            if trigger_event:
+                self.unstable_s -= self.instability_period_s
+        evento = stress.check_thermal_event(self.temp, ref_estado, trigger_event=trigger_event)
+        temp_before_event = self.temp
         if evento["travou"]:
             self.lockups += 1
         if evento["reiniciou"]:
             self.restarts += 1
-            # reinicialização: temperatura despenca, estresse zera
-            self.temp = thermal.AMBIENTE_C + 8
-            self.stress_s = 0.0
+            if self.instability_period_s is None:
+                self.temp = thermal.AMBIENTE_C + 8
+                self.stress_s = 0.0
+            else:
+                # No teste prolongado a pausa do reinício só dissipa parte do calor.
+                self.temp -= 8.0
         self.last_event = evento["mensagem"]
 
         self.history.append({
@@ -93,6 +120,7 @@ class Track:
             "power": power["total_w"],
             "power_detail": power,
             "temp": round(self.temp, 1),
+            "temp_before_event": round(temp_before_event, 1),
             "cpu": round(cpu_util, 1),
             "gpu": round(gpu_util, 1),
             "stress_s": round(self.stress_s, 1),
@@ -209,11 +237,27 @@ class StressTest:
     sob carga sustentada (item 4 e 12 do roteiro do projeto).
     """
 
+    THERMAL_REFERENCE_C = 92.0
+    # Teto da curva de aquecimento em carga máxima, separado do limite térmico.
+    STOCK_COOLER_TARGET_C = 114.0
+    STOCK_COOLER_TAU_S = 85.0
+    INSTABILITY_PERIOD_S = 180.0
+    PREMIUM_BASE_FPS = 180
+
     def __init__(self, tier_a: str, tier_b: str, cpu_range, gpu_range):
         self.tier_a = tier_a
         self.tier_b = tier_b
         self.track_a = Track(Computer(tier_a))
         self.track_b = Track(Computer(tier_b))
+        self.workload_rng = random.Random(0)
+        for track in (self.track_a, self.track_b):
+            track.temp_limite_ref = self.THERMAL_REFERENCE_C
+            track.instability_period_s = self.INSTABILITY_PERIOD_S
+            if track.computer.preset_key == "entrada":
+                track.temp_alvo_ref = self.STOCK_COOLER_TARGET_C
+                track.thermal_tau_s = self.STOCK_COOLER_TAU_S
+            elif track.computer.preset_key == "premium":
+                track.computer.fps_base = self.PREMIUM_BASE_FPS
         self.cpu_range = cpu_range
         self.gpu_range = gpu_range
         # Garante pelo menos um registro no histórico assim que o teste é
@@ -224,8 +268,10 @@ class StressTest:
         restante = seconds
         while restante > 0:
             dt = min(passo, restante)
-            self.track_a.tick(self.cpu_range, self.gpu_range, dt)
-            self.track_b.tick(self.cpu_range, self.gpu_range, dt)
+            cpu = self.workload_rng.uniform(*self.cpu_range)
+            gpu = self.workload_rng.uniform(*self.gpu_range)
+            self.track_a.tick((cpu, cpu), (gpu, gpu), dt)
+            self.track_b.tick((cpu, cpu), (gpu, gpu), dt)
             restante -= dt
 
     def snapshot(self) -> dict:
@@ -237,5 +283,6 @@ class StressTest:
             return None
         last = dict(track.history[-1])
         last["nome"] = track.computer.nome
-        last["temp_max_ref"] = track.computer.cooling["temp_max_ref"]
+        last["temp_max_ref"] = track.temp_limite_ref or track.computer.cooling["temp_max_ref"]
+        last["fps_base"] = track.computer.fps_base
         return last

@@ -1,9 +1,13 @@
 """Demonstração de palco do EnergySim. Cálculos preservados em core/demo.py."""
 import html
+
+import pandas as pd
 import streamlit as st
 from core.demo import QuickDemo
 from models.computer import hardware_details
 from core.energy import cost_projection
+from core.stress import fmt_mmss
+from ui.lab import render_line
 
 
 def br(value, digits=1):
@@ -43,7 +47,6 @@ def render_demo():
     stage = demo.stage
     index = {"normal": 0, "waste": 1, "optimized": 2}[stage]
     st.markdown(
-        '<div class="mast"><b><span aria-hidden="true">ϟ</span> EnergySim</b><small>Demonstração guiada</small></div>'
         '<div class="overview"><div class="intro"><h1>Consumo do computador</h1>'
         '<p>Veja como processos em segundo plano afetam a potência, a temperatura e o custo de uso.</p>'
         '<div class="scenario">PC intermediário &nbsp;·&nbsp; Navegador e documentos</div></div>'
@@ -61,10 +64,20 @@ def render_demo():
     ]
     st.markdown('<div class="el-kpis">'+''.join(f'<div class="el-kpi"><div class="el-kpi-label">{html.escape(a)}</div><div class="el-kpi-val">{html.escape(b)}</div><div class="el-kpi-unit">{html.escape(c)}</div></div>' for a,b,c in kpis)+'</div>', unsafe_allow_html=True)
 
+    details = ""
     if stage == "normal":
         story = ("✓", "Tudo dentro do esperado", "O computador está executando tarefas simples. Agora vamos mostrar o que acontece quando processos extras consomem energia sem contribuir para o trabalho.", "")
     elif stage == "waste":
         story = ("!", "Algo está gastando energia sem necessidade", f"Os processos simulados em segundo plano aumentaram o uso total da CPU e da GPU e acrescentaram {br(snap['power']['waste_w'], 0)} W. A carga do navegador e dos documentos continua igual.", "warning")
+        details = (
+            '<p><strong>O que pode estar consumindo a mais?</strong></p>'
+            '<ul class="el-causes"><li><strong>CPU</strong> · sincronização de arquivos, '
+            'backup ou instalação de atualizações.</li>'
+            '<li><strong>GPU</strong> · abas reproduzindo vídeo com aceleração de hardware ou '
+            'um jogo que ficou aberto em segundo plano.</li></ul>'
+            '<p>São exemplos. Em um PC real, confira as colunas de CPU e GPU no '
+            'Gerenciador de Tarefas para identificar o processo antes de agir.</p>'
+        )
     else:
         extra_before = demo.before["power"]["waste_w"]
         extra_after = snap["power"]["waste_w"]
@@ -78,39 +91,42 @@ def render_demo():
             "good",
         )
     ico, title, desc, kind = story
-    st.markdown(f'<div class="el-story {kind}"><div class="el-story-icon">{ico}</div><div><h3>{html.escape(title)}</h3><p>{html.escape(desc)}</p></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="el-story {kind}"><div class="el-story-icon">{ico}</div><div><h3>{html.escape(title)}</h3><p>{html.escape(desc)}</p>{details}</div></div>', unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([2, 2, 1])
-    c1.button("1. Mostrar consumo extra", type="primary" if stage == "normal" else "secondary", disabled=stage != "normal", on_click=demo.inject_waste, use_container_width=True)
-    c2.button("2. Simular otimização", type="primary" if stage == "waste" else "secondary", disabled=stage != "waste", on_click=demo.optimize, use_container_width=True)
+    c1.button("1. Mostrar consumo extra", type="primary" if stage == "normal" else "secondary", disabled=stage != "normal", on_click=demo.inject_waste, width="stretch")
+    c2.button("2. Simular otimização", type="primary" if stage == "waste" else "secondary", disabled=stage != "waste", on_click=demo.optimize, width="stretch")
     def reset():
         st.session_state.quick_demo = QuickDemo(demo.tariff)
-    c3.button("Recomeçar", on_click=reset, use_container_width=True)
+    c3.button("Recomeçar", on_click=reset, width="stretch")
 
-    result = demo.comparison()
-    if result:
-        left, right = st.columns([3, 2], gap="medium")
-        before_w, after_w = result["before_w"], result["after_w"]
-        ratio = after_w / before_w * 100 if before_w else 0
-        with left:
-            st.markdown(f'''<div class="el-panel"><h3>O que mudou na prática?</h3>
-            <div class="el-compare-row"><span>Com consumo desnecessário</span><b>{br(before_w)} W</b></div>
-            <div class="el-track"><div class="el-fill el-before" style="width:100%"></div></div>
-            <div class="el-compare-row"><span>Após a otimização simulada</span><b>{br(after_w)} W</b></div>
-            <div class="el-track"><div class="el-fill el-after" style="width:{ratio:.2f}%"></div></div>
-            <div class="el-fine">Temperatura estimada: {br(result['before_temp'])} °C → {br(result['after_temp'])} °C<br>
-            Custo em 30 dias: R$ {br(result['before_month']['custo'],2)} → R$ {br(result['after_month']['custo'],2)}</div></div>''', unsafe_allow_html=True)
-        with right:
-            st.markdown(f'''<div class="el-outcome"><div class="el-t">Redução da potência no cenário</div><div class="el-v">{br(result['reduction_pct'])}%</div>
-            <div class="el-line"></div><div class="el-t">Economia projetada em 30 dias</div><div class="el-v small">R$ {br(result['saved_brl'],2)}</div>
-            <div class="el-foot">{br(result['saved_kwh'],2)} kWh a menos no mesmo período de uso</div></div>''', unsafe_allow_html=True)
-    else:
+    if stage != "optimized":
         normal_min = snap["anomaly"]["esperado_min"]
         normal_max = snap["anomaly"]["esperado_max"]
         st.markdown(f'<div class="el-disclaimer">Faixa de consumo de referência da tarefa: {br(normal_min)} a {br(normal_max)} W. O modelo sinaliza uma anomalia acima de {br(normal_max * 1.15)} W.</div>', unsafe_allow_html=True)
 
+    st.subheader("Evolução da simulação")
+    st.caption("Cada mudança de etapa avança três minutos simulados. Use os controles para observar como a temperatura evolui com a carga atual.")
+    elapsed, energy, peak = st.columns(3)
+    elapsed.metric("Tempo simulado", fmt_mmss(snap["elapsed_s"]))
+    energy.metric("Energia acumulada", f'{br(snap["kwh"], 4)} kWh')
+    peak.metric("Pico de temperatura", f"{br(demo.sim.temp_max_atingida)} °C")
+    short, long = st.columns(2)
+    short.button("Avançar 30 s", on_click=demo.observe, args=(30,), width="stretch")
+    long.button("Avançar 2 min", on_click=demo.observe, args=(120,), width="stretch")
+    history = pd.DataFrame(demo.sim.real.history).rename(columns={
+        "t": "Tempo (s)", "power": "Potência (W)", "temp": "Temperatura (°C)",
+        "cpu": "CPU", "gpu": "GPU",
+    }).set_index("Tempo (s)")
+    power_chart, temp_chart = st.columns(2)
+    with power_chart:
+        render_line(history[["Potência (W)"]])
+    with temp_chart:
+        render_line(history[["Temperatura (°C)"]])
+    render_line(history[["CPU", "GPU"]], "Uso (%)")
+
     with st.expander("Premissas da simulação e tarifa"):
-        st.markdown(f'<div class="el-disclaimer">Demonstração educativa, sem leitura de sensores nem alteração de processos reais. Projeção: 8 h por dia, durante 30 dias, com tarifa ilustrativa de R$ {br(demo.tariff,2)} por kWh e consumo constante. Cada etapa térmica representa três minutos simulados. Os 90 W adicionais são uma hipótese de teste, não uma medida de aplicativos específicos.</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="el-disclaimer">Demonstração educativa, sem leitura de sensores nem alteração de processos reais. Projeção: 8 h por dia, durante 30 dias, com tarifa ilustrativa de R$ {br(demo.tariff,2)} por kWh e consumo constante. Cada etapa térmica representa três minutos simulados. Os 90 W adicionais correspondem à carga extra do cenário simulado.</div>', unsafe_allow_html=True)
         st.write("Esta é uma simulação controlada. A intervenção aplica a ação 'verificar processos' do modelo, sem encerrar nenhum programa real. O alerta compara a potência total com uma faixa esperada da tarefa, acrescida de 15% de tolerância. A economia compara a mesma carga útil e as mesmas 240 horas mensais antes e depois.")
         st.write("Atualizações, sincronizações e backups nem sempre são desperdício: o excesso precisa ser confirmado em uma implementação com sensores e processos reais. A temperatura varia ao longo do tempo e não cai imediatamente em hardware físico.")
         tariff = st.number_input("Tarifa utilizada no exemplo (R$/kWh)", min_value=0.10, max_value=3.0, value=demo.tariff, step=0.05, key="demo_tariff")
@@ -125,7 +141,30 @@ def render_demo():
             for label, value in specs
         )
         st.markdown('<div class="el-hardware"><h3>Computador desta simulação</h3><div class="el-specs">' + cards + '</div><p>Configuração de referência. Não é uma detecção do seu computador. Turbo é um limite eventual; consumo, temperatura e clock são estimativas didáticas.</p></div>', unsafe_allow_html=True)
-    st.write("O modo completo inclui seleção de computadores e atividades, relatórios, testes de estresse e experimentos.")
-    if st.button("Explorar o modo completo"):
-        st.session_state.screen = "intro_problema"
-        st.rerun()
+    return demo
+
+def render_comparison(demo):
+    result = demo.comparison()
+    if result is None:
+        return False
+
+    st.title("Antes e depois da otimização")
+    st.caption("Medições imediatamente antes da intervenção e após três minutos simulados. A projeção mensal usa a mesma tarifa e o mesmo tempo de uso.")
+    left, right = st.columns([3, 2], gap="medium")
+    before_w, after_w = result["before_w"], result["after_w"]
+    ratio = after_w / before_w * 100 if before_w else 0
+    with left:
+        st.markdown(f'''<div class="el-panel"><h3>O que mudou na prática?</h3>
+        <div class="el-compare-row"><span>Com consumo desnecessário</span><b>{br(before_w)} W</b></div>
+        <div class="el-track"><div class="el-fill el-before" style="width:100%"></div></div>
+        <div class="el-compare-row"><span>Após a otimização simulada</span><b>{br(after_w)} W</b></div>
+        <div class="el-track"><div class="el-fill el-after" style="width:{ratio:.2f}%"></div></div>
+        <div class="el-fine">Temperatura estimada: {br(result['before_temp'])} °C → {br(result['after_temp'])} °C<br>
+        Uso da CPU: {br(demo.before['cpu_util'], 0)}% → {br(demo.after['cpu_util'], 0)}%<br>
+        Uso da GPU: {br(demo.before['gpu_util'], 0)}% → {br(demo.after['gpu_util'], 0)}%<br>
+        Custo em 30 dias: R$ {br(result['before_month']['custo'],2)} → R$ {br(result['after_month']['custo'],2)}</div></div>''', unsafe_allow_html=True)
+    with right:
+        st.markdown(f'''<div class="el-outcome"><div class="el-t">Redução da potência no cenário</div><div class="el-v">{br(result['reduction_pct'])}%</div>
+        <div class="el-line"></div><div class="el-t">Economia projetada em 30 dias</div><div class="el-v small">R$ {br(result['saved_brl'],2)}</div>
+        <div class="el-foot">{br(result['saved_kwh'],2)} kWh a menos no mesmo período de uso</div></div>''', unsafe_allow_html=True)
+    return True

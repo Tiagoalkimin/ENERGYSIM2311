@@ -81,7 +81,7 @@ def build_stress_test_report(track) -> dict:
     if not hist:
         return None
 
-    temps = [h["temp"] for h in hist]
+    temps = [h.get("temp_before_event", h["temp"]) for h in hist]
     perfs = [h["performance_pct"] for h in hist]
     fps_vals = [h["fps"] for h in hist]
     performance_medio = sum(perfs) / len(perfs)

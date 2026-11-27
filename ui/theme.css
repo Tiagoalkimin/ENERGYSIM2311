@@ -53,6 +53,8 @@
 .el-story.warning .el-story-icon { color: #874b12; }
 .el-story h3, .el-panel h3, .el-hardware h3 { font-size: 1.12rem; margin: 0; padding: 0; }
 .el-story p { font-size: .95rem; margin: 5px 0 0; }
+.el-story .el-causes { font-size: .95rem; margin: 6px 0; padding-inline-start: 1.2rem; }
+.el-causes li + li { margin-top: 4px; }
 .el-outcome { padding: 24px; border-radius: 12px; background: #163632; color: white; }
 .el-v { color: #c7f789; }
 .el-line { border-top: 1px solid #51716b; margin: 12px 0; }

@@ -38,7 +38,7 @@ def _render_chart(data, x, y, *, kind, series=None):
         chart = chart.encode(color=alt.value("#11685e"))
     height = 340 if series else 250
     chart = chart.encode(x=x_axis, y=y_axis, tooltip=tooltip).properties(height=height)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def render_line(data, y=None):

@@ -10,7 +10,7 @@
 
 > Imagine estar estudando, trabalhando em um documento ou navegando na internet. Tudo parece normal. Mas e se o computador estiver gastando muito mais energia do que precisa, mesmo sem você perceber? Essa é a questão que motivou o EnergySim.
 
-**Na tela:** Abra a demonstração no estágio inicial. Aponte o título e depois o indicador *Consumo neste momento*. Não abra configurações nem o modo completo.
+**Na tela:** Antes da apresentação, avance pelo roteiro até **Abrir demonstração rápida**. Com a demonstração no estágio inicial, aponte o título e o indicador *Consumo neste momento*.
 
 ## 00:20 a 00:42 | Mostrar o consumo normal
 
@@ -38,7 +38,7 @@
 
 > O próximo passo é avaliar a intervenção. Nosso modelo simula a remoção desse consumo extra, mantendo a mesma carga útil de CPU e GPU. A comparação aparece imediatamente, com a potência anterior e a posterior. A temperatura também é estimada ao longo de um intervalo simulado, não reduzida de forma instantânea em um equipamento real.
 
-**Na tela:** Mostre as duas barras comparativas. Evite afirmar que o protótipo fechou programas de verdade.
+**Na tela:** Clique em **Ver comparativo** e mostre as duas barras de potência e os indicadores de antes e depois.
 
 ## 01:28 a 01:50 | Traduzir o resultado
 
@@ -88,5 +88,5 @@ O modelo térmico estima a evolução da temperatura conforme a potência e a ca
 4. Clique em **Recomeçar** antes da apresentação.
 5. Use o navegador em tela cheia (F11), com zoom de 90% ou 100% conforme a resolução.
 6. Ensaie os dois cliques principais até conseguir explicar o resultado sem ler a tela.
-7. Não entre no modo completo durante a demonstração; reserve os detalhes para perguntas da banca.
+7. Reserve o teste de estresse e os experimentos do laboratório para as perguntas da banca.
 8. Se a fonte de texto personalizada não carregar por falta de internet, o sistema utiliza uma fonte alternativa.

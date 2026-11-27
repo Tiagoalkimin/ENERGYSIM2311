@@ -15,6 +15,7 @@ import random
 # Fração da potência máxima do PC acima da qual consideramos que ele está
 # "sob estresse" (carga alta sustentada).
 LIMIAR_CARGA_ALTA = 0.55
+FRACAO_INSTABILIDADE = 0.95
 
 # Faixa de clock ILUSTRATIVA (não representa um processador real).
 CLOCK_BASE_GHZ = 3.6
@@ -78,13 +79,13 @@ def fps_educativo(performance_pct: float, fps_base: float) -> float:
     return round(fps_base * performance_pct / 100.0, 0)
 
 
-def check_thermal_event(temp: float, temp_max_ref: float, rng=None) -> dict:
-    """Sorteia eventos de instabilidade conforme a temperatura ultrapassa
-    limiares crescentes. Retorna flags e uma mensagem para exibição na UI."""
+def check_thermal_event(temp: float, temp_max_ref: float, rng=None, *, trigger_event=None) -> dict:
+    """Classifica os eventos térmicos. O teste comparativo fornece seu gatilho
+    por exposição prolongada. As demais simulações usam sorteio."""
     rng = rng or random
 
     aviso_temp = temp_max_ref * 0.85
-    instavel_temp = temp_max_ref * 0.95
+    instavel_temp = temp_max_ref * FRACAO_INSTABILIDADE
     critico_temp = temp_max_ref * 1.02
 
     evento = {
@@ -96,7 +97,8 @@ def check_thermal_event(temp: float, temp_max_ref: float, rng=None) -> dict:
 
     if temp >= critico_temp:
         evento["nivel"] = "critico"
-        if rng.random() < 0.35:
+        should_restart = trigger_event if trigger_event is not None else rng.random() < 0.35
+        if should_restart:
             evento["reiniciou"] = True
             evento["mensagem"] = (
                 "🔵 TELA AZUL / REINICIALIZAÇÃO — o sistema reiniciou para se proteger "
@@ -104,7 +106,8 @@ def check_thermal_event(temp: float, temp_max_ref: float, rng=None) -> dict:
             )
     elif temp >= instavel_temp:
         evento["nivel"] = "instavel"
-        if rng.random() < 0.20:
+        should_lock_up = trigger_event if trigger_event is not None else rng.random() < 0.20
+        if should_lock_up:
             evento["travou"] = True
             evento["mensagem"] = "🔴 COMPUTADOR INSTÁVEL — o sistema travou momentaneamente."
     elif temp >= aviso_temp:

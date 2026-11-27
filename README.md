@@ -1,6 +1,6 @@
 # EnergySim
 
-Demonstração de desperdício de energia em computadores para apresentação de aproximadamente dois minutos. Abre diretamente no painel, sem cadastro ou configuração prévia.
+Simulador educativo de consumo de energia em computadores. O roteiro abre em **Qual é o problema?** e segue pela introdução, demonstração rápida, comparativo e teste de estresse.
 
 ## Executar
 
@@ -40,12 +40,13 @@ Se você recebeu o projeto em ZIP, extraia a pasta `EnergySim` e rode `git init 
 3. Em **Advanced settings**, escolha **Python 3.12**. O Community Cloud instala as dependências de `requirements.txt` e carrega o tema de `.streamlit/config.toml`. O app usa dados simulados e dispensa configuração de segredos.
 4. Clique em **Deploy** e abra o endereço `streamlit.app` gerado.
 
-## Demonstração
+## Roteiro interativo
 
-1. Observe os quatro indicadores de um PC intermediário executando navegador e documentos.
-2. Clique em **1. Mostrar consumo extra**. O consumo extra de processos em segundo plano aparece imediatamente e dispara o alerta.
-3. Clique em **2. Simular otimização**. A mesma tela compara potência, temperatura, percentual de redução, energia e custo mensal.
-4. Use **Recomeçar** para uma nova apresentação. A tarifa configurada é mantida.
+1. Na tela **Por que o formato dos componentes importa?**, clique em **Abrir demonstração rápida**. Observe os indicadores de um PC intermediário executando navegador e documentos.
+2. Clique em **1. Mostrar consumo extra** para simular processos em segundo plano e ver exemplos de possíveis causas. Os gráficos acompanham potência, temperatura e uso de CPU e GPU. Use **Avançar 30 s** ou **Avançar 2 min** para observar a evolução da etapa atual.
+3. Clique em **2. Simular otimização** para ver o que mudou. Em **Ver comparativo**, confira o antes e depois, com a redução de potência e a economia projetada.
+4. Avance para o **teste de estresse**, que apresenta as configurações de um PC de entrada e um topo de linha antes de executar a mesma tarefa pesada nos dois.
+5. Explore o resultado, a explicação térmica e os oito experimentos de laboratório. Na conclusão, **Recomeçar roteiro** retorna à primeira tela.
 
 Os dois cliques não impõem duração mínima. O roteiro em docs/ROTEIRO_HACKATHON.md distribui a explicação em 120 segundos, dentro da faixa solicitada de 90 a 150 segundos. A duração ao vivo depende do apresentador.
 
@@ -68,16 +69,10 @@ economia mensal = custo antes - custo depois
 
 No cenário padrão: 162,4 W antes, 72,4 W depois, redução de 55,4%, economia de 21,60 kWh e R$ 19,44 por mês. Esses números são calculados pelo modelo. A economia usa cenários com a mesma duração mensal, não o histórico acumulado durante os cliques.
 
-## Recursos preservados
+## Estrutura do projeto
 
-O botão **Explorar o modo completo** abre 19 etapas com três perfis de computador, atividades, recomendações, relatórios, teste de estresse e oito experimentos. O botão **Voltar à demonstração rápida** fica no fim de cada etapa.
-
-Os cálculos e o comportamento legado não foram reescritos. As simulações antigas de instabilidade continuam apenas no modo educativo completo, com seus avisos originais. O novo comparativo usa um cálculo próprio e explícito entre dois estados da mesma tarefa. Não depende do percentual histórico do relatório legado.
-
-## Estrutura alterada
-
-* app.py: registro da demonstração como tela inicial e retorno pelo menu.
-* ui/demo.py: painel com quatro indicadores e comparação visual.
+* app.py: roteiro, introdução, teste de estresse e laboratório.
+* ui/demo.py: painel, gráficos e comparativo de antes e depois.
 * core/demo.py: fluxo controlado que reutiliza Simulator, inject_waste e apply_decision.
 * .streamlit/config.toml: tema claro do app.
 * tests/: testes de fluxo, cálculos, persistência, tarifa e compatibilidade.

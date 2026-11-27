@@ -1,9 +1,9 @@
 import unittest
 from core.demo import QuickDemo
-from core.report import build_report
+from core.report import build_report, build_stress_test_report
 from core.simulator import Simulator, StressTest
 from models.computer import Computer
-from models.activities import get_task
+from models.activities import ACTIVITIES, get_task
 
 
 class DemoTests(unittest.TestCase):
@@ -60,3 +60,33 @@ class DemoTests(unittest.TestCase):
         test = StressTest('entrada', 'premium', (20, 20), (5, 5))
         self.assertIsNotNone(test.snapshot()['a'])
         self.assertIsNotNone(test.snapshot()['b'])
+
+    def test_stress_comparison_uses_shared_load_and_thermal_reference(self):
+        for name, task in ACTIVITIES['pesado']['tarefas'].items():
+            with self.subTest(task=name):
+                test = StressTest('entrada', 'premium', task['cpu'], task['gpu'])
+                test.advance(120, passo=5)
+                entry, premium = test.snapshot().values()
+                for field in ('cpu', 'gpu', 't', 'temp_max_ref'):
+                    self.assertEqual(entry[field], premium[field])
+                self.assertLess(entry['temp'], 85)
+                self.assertLess(premium['temp'], entry['temp'])
+                self.assertGreater(premium['performance_pct'], entry['performance_pct'])
+                self.assertGreater(premium['fps'], 140)
+                self.assertEqual(entry['lockups'] + entry['restarts'], 0)
+                self.assertEqual(premium['lockups'] + premium['restarts'], 0)
+
+                test.advance(350, passo=5)
+                sustained_entry, sustained_premium = test.snapshot().values()
+                self.assertGreater(sustained_entry['temp'], entry['temp'])
+                self.assertLess(sustained_entry['performance_pct'], entry['performance_pct'])
+                self.assertLess(sustained_entry['performance_pct'], sustained_premium['performance_pct'])
+                self.assertLessEqual(sustained_entry['lockups'] + sustained_entry['restarts'], 1)
+                self.assertEqual(sustained_premium['lockups'] + sustained_premium['restarts'], 0)
+
+                test.advance(128, passo=2)
+                entry_report = build_stress_test_report(test.track_a)
+                premium_report = build_stress_test_report(test.track_b)
+                self.assertLessEqual(entry_report['travamentos'] + entry_report['reinicializacoes'], 2)
+                self.assertGreater(entry_report['temp_max'], premium_report['temp_max'])
+                self.assertLess(entry_report['performance_medio'], premium_report['performance_medio'])
