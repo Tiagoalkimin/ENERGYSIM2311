@@ -28,7 +28,7 @@
 
 > Agora adicionamos um consumo de 90 watts, representando processos desnecessários em segundo plano. Podem existir abas esquecidas, aplicativos ativos ou sincronizações que precisam ser investigadas. Percebam: a atividade principal continua igual, mas a potência aumentou. O EnergySim compara esse consumo com a referência esperada para a tarefa e destaca a anomalia.
 
-**Na tela:** Aponte o indicador de potência e a mensagem de alerta. Ressalte que os 90 watts são uma hipótese ilustrativa e não uma medição dos aplicativos citados.
+**Na tela:** Mostre o aumento do uso total de CPU e GPU, o indicador de potência e a mensagem de alerta. Os 90 watts são calculados para a carga extra adotada neste cenário ilustrativo.
 
 ## 01:05 a 01:28 | Aplicar a intervenção
 

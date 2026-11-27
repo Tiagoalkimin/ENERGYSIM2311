@@ -51,7 +51,7 @@ Os dois cliques não impõem duração mínima. O roteiro em docs/ROTEIRO_HACKAT
 
 ## Valores e limites
 
-Todos os indicadores são simulados. Nenhum processo real é encerrado e nenhum consumo real de hardware é medido. A utilização útil de CPU e GPU permanece fixa, isolando a parcela de 90 W adicionada pelo modelo. Essa parcela é um recurso didático, não uma estimativa de consumo de um programa específico.
+Todos os indicadores são simulados. A carga do navegador e dos documentos permanece fixa. Os processos extras aumentam o uso total da CPU e da GPU, acrescentando 90 W no computador de referência. A otimização remove essa carga extra e devolve os indicadores aos níveis iniciais.
 
 A faixa esperada usa as faixas originais da tarefa e a margem de detecção de 15%. O cálculo de potência e a resposta térmica de primeira ordem reutilizam o motor original. Cada cenário avança 180 segundos simulados sem espera real. A temperatura exibida após a intervenção representa o final desse intervalo, não resfriamento instantâneo. O cenário escolhido permanece abaixo dos limiares de instabilidade e não apresenta falhas físicas.
 

@@ -17,6 +17,8 @@ from models.computer import Computer
 class Track:
     """Uma trilha de simulação (real ou baseline)."""
 
+    background_load = (0.0, 0.0)
+
     def __init__(self, computer):
         self.computer = computer
         self.temp = thermal.AMBIENTE_C + 5
@@ -48,6 +50,14 @@ class Track:
         gpu_util = min(100, (random.uniform(*gpu_range)) * fator)
 
         power = energy.compute_power(self.computer, cpu_util, gpu_util, self.waste_w)
+        extra_cpu, extra_gpu = self.background_load
+        if extra_cpu or extra_gpu:
+            cpu_util = min(100, cpu_util + extra_cpu)
+            gpu_util = min(100, gpu_util + extra_gpu)
+            loaded = energy.compute_power(self.computer, cpu_util, gpu_util, self.waste_w)
+            # A potência da carga adicional entra em "consumo extra" no gráfico.
+            power["waste_w"] = round(self.waste_w + loaded["total_w"] - power["total_w"], 1)
+            power["total_w"] = loaded["total_w"]
         temp_max_ref = self.computer.cooling["temp_max_ref"]
         target = thermal.target_temperature(
             power["total_w"], self.computer.max_power_w(), temp_max_ref
@@ -162,6 +172,7 @@ class Simulator:
             self.real.modo = "desempenho"
         elif decisao == "verificar_processos":
             self.real.waste_w = 0.0
+            self.real.background_load = (0.0, 0.0)
         elif decisao == "reduzir_gpu":
             self.gpu_range = (self.gpu_range[0] * 0.6, self.gpu_range[1] * 0.6)
         elif decisao == "nada":
@@ -175,9 +186,10 @@ class Simulator:
         self.decisoes_aplicadas.append(registro)
         return registro
 
-    def inject_waste(self, waste_w: float):
+    def inject_waste(self, waste_w: float = 0.0, *, background_load: tuple[float, float] = (0.0, 0.0)):
         """Simula processos em segundo plano desperdiçando energia (para o desafio)."""
         self.real.waste_w = waste_w
+        self.real.background_load = background_load
 
     def recommendations(self) -> list:
         snap = self.snapshot()

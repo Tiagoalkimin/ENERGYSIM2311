@@ -10,7 +10,8 @@ from core.recommendations import detect_anomaly
 
 class QuickDemo:
     TASK = "Navegador + documentos"
-    WASTE_W = 90.0
+    # Pontos percentuais de CPU e GPU calibrados para acrescentar 90 W neste PC.
+    BACKGROUND_LOAD = (40.0, 40.9)
     SETTLE_S = 180
 
     def __init__(self, tariff=0.90):
@@ -36,9 +37,9 @@ class QuickDemo:
     def inject_waste(self):
         if self.stage != "normal":
             return
-        self.sim.inject_waste(self.WASTE_W)
+        self.sim.inject_waste(background_load=self.BACKGROUND_LOAD)
         # A trilha sem intervenção mantém o MESMO desperdício no comparativo.
-        self.sim.baseline.waste_w = self.WASTE_W
+        self.sim.baseline.background_load = self.BACKGROUND_LOAD
         self.sim.advance(self.SETTLE_S, passo=2)
         self.before = self.snapshot()
         self.stage = "waste"

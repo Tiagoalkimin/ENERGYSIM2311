@@ -11,12 +11,13 @@ def br(value, digits=1):
 
 
 def power_panel(power):
+    has_extra = bool(power["waste_w"])
     parts = [
-        ("CPU", "cpu_w", "#b8f16b"),
-        ("GPU", "gpu_w", "#72d4dc"),
+        ("CPU · tarefa" if has_extra else "CPU", "cpu_w", "#b8f16b"),
+        ("GPU · tarefa" if has_extra else "GPU", "gpu_w", "#72d4dc"),
         ("Outros componentes", "extras_w", "#aa9aef"),
     ]
-    if power["waste_w"]:
+    if has_extra:
         parts.append(("Consumo extra", "waste_w", "#ffb879"))
     total = sum(power[key] for _, key, _ in parts)
     stops, legend = [], []
@@ -63,9 +64,19 @@ def render_demo():
     if stage == "normal":
         story = ("✓", "Tudo dentro do esperado", "O computador está executando tarefas simples. Agora vamos mostrar o que acontece quando processos extras consomem energia sem contribuir para o trabalho.", "")
     elif stage == "waste":
-        story = ("!", "Algo está gastando energia sem necessidade", f"A tarefa continua a mesma, mas há {br(snap['power']['waste_w'], 0)} W extras no cenário simulado. Pense em abas com vídeos, programas esquecidos, atualizações ou sincronizações desnecessárias. O EnergySim sinaliza essa diferença para investigação.", "warning")
+        story = ("!", "Algo está gastando energia sem necessidade", f"Os processos simulados em segundo plano aumentaram o uso total da CPU e da GPU e acrescentaram {br(snap['power']['waste_w'], 0)} W. A carga do navegador e dos documentos continua igual.", "warning")
     else:
-        story = ("✓", "Mesmo trabalho, menor consumo", "A intervenção simulada eliminou a parcela adicional de energia. A carga útil de CPU e GPU foi preservada. Veja a comparação e o efeito projetado no custo.", "good")
+        extra_before = demo.before["power"]["waste_w"]
+        extra_after = snap["power"]["waste_w"]
+        story = (
+            "✓",
+            "O que foi feito na otimização?",
+            f"O simulador aplicou a ação «Verificar processos» e reduziu de {br(extra_before, 0)} W "
+            f"para {br(extra_after, 0)} W o consumo extra atribuído a processos desnecessários "
+            "em segundo plano. O uso total da CPU e da GPU voltou ao nível da tarefa original, "
+            "com menos consumo e geração de calor.",
+            "good",
+        )
     ico, title, desc, kind = story
     st.markdown(f'<div class="el-story {kind}"><div class="el-story-icon">{ico}</div><div><h3>{html.escape(title)}</h3><p>{html.escape(desc)}</p></div></div>', unsafe_allow_html=True)
 
